@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ModelStatus {
+  live
+  canary
+  rolling
+  shadow
+  archived
+}
+
+enum DeploymentStrategy {
+  canary
+  blue_green
+  shadow
+}
+
+enum DeploymentStatus {
+  pending
+  running
+  completed
+  rolled_back
+  failed
+}
+
+model MLModel {
+  id             String        @id @default(cuid())
+  name           String
+  version        String
+  framework      String
+  team           String
+
+  artifactName   String?
+  artifactPath   String?
+  artifactSizeKb Int?
+
+  status         ModelStatus   @default(shadow)
+  trafficPercent Int           @default(0)
+
+  latencyMs      Int           @default(0)
+  errorRate      Float         @default(0)
+  driftScore     Float         @default(0)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  deployments    Deployment[]
+
+  @@unique([name, version])
+}
+
+model Deployment {
+  id             String               @id @default(cuid())
+
+  modelId        String
+  model          MLModel              @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  fromVersion    String?
+  toVersion      String
+
+  strategy       DeploymentStrategy
+  trafficPercent Int                  @default(0)
+
+  status         DeploymentStatus     @default(pending)
+
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+}

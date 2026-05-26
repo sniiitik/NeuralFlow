@@ -1,0 +1,38 @@
+{
+  "name": "neuralflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A real-time MLOps dashboard for deploying, monitoring, and safely rolling out machine learning models.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@tailwindcss/postcss": "latest",
+    "clsx": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "pg": "^8.16.3",
+    "prisma": "^7.8.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "recharts": "latest",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "postcss": "latest",
+    "tailwindcss": "latest",
+    "tsx": "^4.22.3",
+    "typescript": "latest"
+  }
+}

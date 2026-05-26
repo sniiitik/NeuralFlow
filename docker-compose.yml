@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: neuralflow-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: neuralflow
+      POSTGRES_PASSWORD: neuralflow
+      POSTGRES_DB: neuralflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
