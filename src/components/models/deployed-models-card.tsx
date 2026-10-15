@@ -16,20 +16,30 @@ export function DeployedModelsCard({ models }: { models: MLModel[] }) {
   }
 
   return (
-    <section className="glass-card rounded-[20px] p-8">
-      <div className="mb-8 flex items-center justify-between">
-        <h2 className="text-[28px] font-bold tracking-[-0.06em] text-[#f5f3ed]">Deployed models</h2>
-        <Link href="/models" className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.05em] text-[#c8c3b9] transition hover:text-[#f5f3ed]">
+    <section className="glass-card rounded-lg p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-medium tracking-tight text-[var(--foreground)]">
+          Registered versions
+        </h2>
+        <Link
+          href="/models"
+          className="flex items-center gap-2 text-xs font-semibold tracking-tight text-[var(--secondary)] transition hover:text-[var(--foreground)]"
+        >
           View all <ArrowRight className="h-6 w-6" />
         </Link>
       </div>
 
       <div className="divide-y divide-white/10">
         {models.slice(0, 4).map((model) => (
-          <div key={model.id} className="flex items-center justify-between gap-4 py-6 first:pt-0 last:pb-0">
+          <div
+            key={model.id}
+            className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+          >
             <div>
-              <div className="text-[28px] font-bold leading-none tracking-[-0.06em] text-[#f7f4ee]">{model.name}</div>
-              <div className="mt-2 text-[22px] font-semibold leading-none tracking-[-0.05em] text-[#beb9af]">
+              <div className="text-sm font-medium leading-none tracking-tight text-[var(--secondary)]">
+                {model.name}
+              </div>
+              <div className="mt-2 text-sm font-semibold leading-none tracking-tight text-[var(--secondary)]">
                 {model.version} - {model.framework}
               </div>
             </div>

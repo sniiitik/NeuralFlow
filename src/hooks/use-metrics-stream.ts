@@ -4,39 +4,32 @@ import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import type { MetricSnapshot } from "@/lib/types";
 
-const fallbackSnapshot: MetricSnapshot = {
-  requestsPerSecond: 289,
-  avgLatencyMs: 42,
-  errorRate: 0.3,
-  modelsLive: 6,
-  rollingOut: 2,
-  driftAlerts: 1,
-  generatedAt: new Date().toISOString(),
-};
-
 export function useMetricsStream() {
-  const [snapshot, setSnapshot] = useState<MetricSnapshot>(fallbackSnapshot);
+  const [snapshot, setSnapshot] = useState<MetricSnapshot | null>(null);
   const [connected, setConnected] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
     let closed = false;
     const source = new EventSource("/api/metrics/stream");
 
-    source.onopen = () => setConnected(true);
+    source.onopen = () => { setConnected(true); setError(false); };
     source.onmessage = (event) => {
       setSnapshot(JSON.parse(event.data) as MetricSnapshot);
+      setError(false);
     };
     source.onerror = () => {
       source.close();
       setConnected(false);
+      setError(true);
 
       interval = setInterval(async () => {
         try {
           const next = await apiClient.getSnapshot();
-          if (!closed) setSnapshot(next);
+          if (!closed) { setSnapshot(next); setError(false); }
         } catch {
-          // Keep the previous snapshot if polling fails.
+          if (!closed) setError(true);
         }
       }, 2500);
     };
@@ -48,5 +41,5 @@ export function useMetricsStream() {
     };
   }, []);
 
-  return { snapshot, connected };
+  return { snapshot, connected, error };
 }

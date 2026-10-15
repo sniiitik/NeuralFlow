@@ -1,3 +1,4 @@
+// Legacy metadata fixtures for prisma/seed-demo.ts only. Never used for production telemetry.
 import type { AuditEvent, Deployment, MLModel } from "./types";
 
 export const initialModels: MLModel[] = [

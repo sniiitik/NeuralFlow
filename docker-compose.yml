@@ -3,13 +3,122 @@ services:
     image: postgres:16
     container_name: neuralflow-postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: neuralflow
       POSTGRES_PASSWORD: neuralflow
       POSTGRES_DB: neuralflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks: [control, db_host]
+
+  app:
+    profiles: ["app"]
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: postgresql://neuralflow:neuralflow@postgres:5432/neuralflow
+      ARTIFACT_STORAGE_DIR: /app/var/artifacts
+      INFERENCE_RUNTIME_URL: http://inference:8000
+      INFERENCE_RUNTIME_GREEN_URL: http://inference-green:8000
+      INFERENCE_RUNTIME_TOKEN: ${INFERENCE_RUNTIME_TOKEN:?Set INFERENCE_RUNTIME_TOKEN in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      BETTER_AUTH_URL: http://localhost:3000
+      MONITOR_SLO_P95_MS: ${MONITOR_SLO_P95_MS:-80}
+      MONITOR_SLO_SUCCESS_PERCENT: ${MONITOR_SLO_SUCCESS_PERCENT:-99}
+      MONITOR_DRIFT_THRESHOLD: ${MONITOR_DRIFT_THRESHOLD:-0.5}
+      MONITOR_ALERT_MIN_REQUESTS: ${MONITOR_ALERT_MIN_REQUESTS:-20}
+    depends_on:
+      postgres:
+        condition: service_started
+      inference:
+        condition: service_healthy
+      inference-green:
+        condition: service_healthy
+    volumes:
+      - ./var/artifacts:/app/var/artifacts
+    networks: [edge, control, serving]
+
+  monitor:
+    profiles: ["app"]
+    build:
+      context: .
+      target: monitor
+    environment:
+      DATABASE_URL: postgresql://neuralflow:neuralflow@postgres:5432/neuralflow
+      INFERENCE_RUNTIME_URL: http://inference:8000
+      INFERENCE_RUNTIME_GREEN_URL: http://inference-green:8000
+      INFERENCE_RUNTIME_TOKEN: ${INFERENCE_RUNTIME_TOKEN:?Set INFERENCE_RUNTIME_TOKEN in .env}
+      MONITOR_SLO_P95_MS: ${MONITOR_SLO_P95_MS:-80}
+      MONITOR_SLO_SUCCESS_PERCENT: ${MONITOR_SLO_SUCCESS_PERCENT:-99}
+      MONITOR_DRIFT_THRESHOLD: ${MONITOR_DRIFT_THRESHOLD:-0.5}
+      MONITOR_ALERT_MIN_REQUESTS: ${MONITOR_ALERT_MIN_REQUESTS:-20}
+    depends_on:
+      postgres:
+        condition: service_started
+      inference:
+        condition: service_healthy
+      inference-green:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [control, serving]
+
+  inference:
+    profiles: ["app", "inference"]
+    build:
+      context: ./inference
+      target: runtime
+    ports:
+      - "127.0.0.1:8001:8000"
+    read_only: true
+    environment:
+      INFERENCE_RUNTIME_TOKEN: ${INFERENCE_RUNTIME_TOKEN:?Set INFERENCE_RUNTIME_TOKEN in .env}
+    tmpfs:
+      - /tmp
+    networks: [serving, runtime_host]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  inference-green:
+    profiles: ["app", "inference"]
+    build:
+      context: ./inference
+      target: runtime
+    ports:
+      - "127.0.0.1:8002:8000"
+    read_only: true
+    environment:
+      INFERENCE_RUNTIME_TOKEN: ${INFERENCE_RUNTIME_TOKEN:?Set INFERENCE_RUNTIME_TOKEN in .env}
+    tmpfs:
+      - /tmp
+    networks: [serving, runtime_host]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  trainer:
+    profiles: ["train"]
+    build:
+      context: ./inference
+      target: trainer
+    volumes:
+      - ./var/trained:/output
 
 volumes:
   postgres_data:
+
+networks:
+  edge: {}
+  control:
+    internal: true
+  serving:
+    internal: true
+  db_host: {}
+  runtime_host: {}

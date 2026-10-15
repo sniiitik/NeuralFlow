@@ -1,166 +1,163 @@
 "use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Image from "next/image";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
-  BarChart3,
   Box,
-  MoreHorizontal,
-  Grid2X2,
+  FlaskConical,
+  LayoutDashboard,
+  LogOut,
   Menu,
   Rocket,
   Settings,
-  UsersRound,
-  Workflow,
+  History,
   X,
 } from "lucide-react";
-import { useState } from "react";
-import { clsx } from "clsx";
-
-const navItems = [
-  { href: "/", label: "Overview", icon: Grid2X2 },
-  { href: "/models", label: "Models", icon: Box },
+import { useState, useEffect, useRef } from "react";
+import { authClient } from "@/lib/auth-client";
+import { useAccess } from "@/hooks/use-access";
+import { PixelField } from "@/components/ui/pixel-field";
+const items = [
+  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/models", label: "Model Registry", icon: Box },
   { href: "/deployments", label: "Deployments", icon: Rocket },
-  { href: "/monitoring", label: "Monitoring", icon: BarChart3 },
-];
-
-const settingsItems = [
-  { href: "/team", label: "Team", icon: UsersRound },
+  { href: "/inference", label: "Inference Playground", icon: FlaskConical },
+  { href: "/monitoring", label: "Monitoring", icon: Activity },
+  { href: "/audit", label: "Audit History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const pathname = usePathname();
-
-  return (
-    <>
-      <div className="flex h-[136px] items-center gap-4 border-b border-white/10 px-10">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6457f6] shadow-lg shadow-[#6457f6]/20">
-          <Workflow className="h-7 w-7 text-white" strokeWidth={2.6} />
-        </div>
-        <span className="text-[28px] font-bold tracking-[-0.04em] text-[#f5f3ed]">NeuralFlow</span>
-      </div>
-
-      <nav className="space-y-1 py-4">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={clsx(
-                "group relative flex h-[62px] items-center gap-5 px-10 text-[27px] font-semibold tracking-[-0.04em] transition",
-                active ? "bg-white/[0.045] text-[#f5f3ed]" : "text-[#c4c1b8] hover:bg-white/[0.035] hover:text-[#f5f3ed]"
-              )}
-            >
-              {active ? <span className="absolute left-0 top-0 h-full w-1 rounded-r-full bg-[#6457f6]" /> : null}
-              <Icon className="h-7 w-7 shrink-0" strokeWidth={2.2} />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="mt-7 px-10 text-sm font-bold uppercase tracking-[0.22em] text-[#8b887f]">Settings</div>
-      <nav className="mt-4 space-y-1">
-        {settingsItems.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={clsx(
-                "group relative flex h-[62px] items-center gap-5 px-10 text-[27px] font-semibold tracking-[-0.04em] transition",
-                active ? "bg-white/[0.045] text-[#f5f3ed]" : "text-[#c4c1b8] hover:bg-white/[0.035] hover:text-[#f5f3ed]"
-              )}
-            >
-              {active ? <span className="absolute left-0 top-0 h-full w-1 rounded-r-full bg-[#6457f6]" /> : null}
-              <Icon className="h-7 w-7 shrink-0" strokeWidth={2.2} />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-    </>
-  );
-}
-
-function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
-  return (
-    <div className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-white/10 bg-[#282826]/80 px-5 backdrop-blur xl:hidden">
-      <button
-        type="button"
-        onClick={onOpenMenu}
-        className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-[#f5f3ed]"
-        aria-label="Open navigation"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#6457f6]">
-          <Workflow className="h-5 w-5 text-white" />
-        </div>
-        <span className="text-xl font-bold tracking-[-0.04em]">NeuralFlow</span>
-      </div>
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
-        <Activity className="h-5 w-5 text-[#82c853]" />
-      </div>
-    </div>
-  );
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
+  const [open, setOpen] = useState(false);
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement;
+    navigation.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+    function key(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Tab") {
+        const nodes = Array.from(
+          navigation.current?.querySelectorAll<HTMLElement>("a,button") ?? [],
+        );
+        const first = nodes[0],
+          last = nodes.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("keydown", key);
+      previous?.focus();
+    };
+  }, [open]);
+  const pathname = usePathname(),
+    router = useRouter();
+  const { user, role } = useAccess();
+  if (pathname === "/login") return <main>{children}</main>;
   return (
-    <div className="min-h-screen bg-[#282826] text-[#f5f3ed]">
-      <TopBar onOpenMenu={() => setMobileOpen(true)} />
-
-      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[390px] border-r border-white/10 bg-[#242520]/95 xl:block">
-        <SidebarContent />
-      </aside>
-
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-40 xl:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation backdrop"
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className="absolute left-0 top-0 h-full w-[330px] max-w-[84vw] border-r border-white/10 bg-[#242520] shadow-2xl">
-            <button
-              type="button"
-              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-[#d7d3c7]"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close navigation"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
-          </aside>
+    <div className="app-shell relative min-h-screen isolate">
+      <PixelField />
+      <a className="skip-link" href="#content">
+        Skip to content
+      </a>
+      {open && (
+        <button
+          className="fixed inset-0 z-30 bg-black/70 lg:hidden"
+          aria-label="Close navigation"
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <aside
+        ref={navigation}
+        aria-label="Workspace navigation"
+        className={`${open ? "flex" : "hidden"} fixed inset-y-0 left-0 z-40 w-60 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] lg:flex`}
+      >
+        <Link
+          href="/"
+          className="flex h-16 items-center gap-3 px-5 text-base font-semibold"
+        >
+          <Image src="/neuralflow-logo.svg" alt="" width={26} height={26} className="h-[26px] w-[26px] rounded" />
+          NeuralFlow
+        </Link>
+        <button
+          className="absolute right-3 top-5 lg:hidden"
+          onClick={() => setOpen(false)}
+          aria-label="Close navigation"
+        >
+          <X size={18} />
+        </button>
+        <div className="mx-3 mb-6 rounded-md border border-[var(--border)] px-3 py-2">
+          <span className="text-xs muted">Workspace</span>
+          <div className="text-sm">
+            NeuralFlow <span className="float-right badge">Local</span>
+          </div>
         </div>
-      ) : null}
-
-      <main className="xl:pl-[390px]">
-        <div className="mx-auto min-h-screen w-full max-w-[1200px] px-5 py-8 sm:px-8 xl:px-10 xl:py-12">
-          <div className="mb-9 hidden items-center justify-end gap-4 xl:flex">
-            <div className="flex items-center gap-3 rounded-full bg-[#345f1d] px-5 py-2 text-lg font-bold text-[#91dc60]">
-              <span className="h-3 w-3 rounded-full bg-[#88cf4f]" />
-              Live
-            </div>
-            <button className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1f201d] text-[#d6d2c8] transition hover:bg-[#2f302b]" aria-label="More options">
-              <MoreHorizontal className="h-7 w-7" />
+        <nav aria-label="Main navigation" className="space-y-1 px-3">
+          {items.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setOpen(false)}
+              aria-current={pathname === href ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-md px-3 py-2 text-[13px] ${pathname === href ? "bg-[var(--elevated)] text-[var(--foreground)]" : "text-[var(--secondary)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]"}`}
+            >
+              <Icon size={17} />
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="mt-auto border-t border-[var(--border)] p-4">
+          <Link href="/settings" className="block truncate text-sm">
+            {user?.name ?? "Account"}
+          </Link>
+          <div className="mt-1 flex items-center justify-between">
+            <span className="badge capitalize">{role}</span>
+            <button
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={async () => {
+                await authClient.signOut();
+                router.push("/login");
+                router.refresh();
+              }}
+              className="btn"
+            >
+              <LogOut size={14} />
             </button>
           </div>
-          {children}
         </div>
-      </main>
+      </aside>
+      <div inert={open} className="relative z-10 lg:pl-60">
+        <header className="flex h-14 items-center gap-3 border-b border-[var(--border)] px-5 sm:px-8">
+          <button
+            className="rounded-md border border-[var(--border)] p-2 lg:hidden"
+            aria-label="Open navigation"
+            aria-expanded={open}
+            onClick={() => setOpen(true)}
+          >
+            <Menu size={18} />
+          </button>
+          <span className="text-xs muted">Workspace</span>
+          <span className="muted">/</span>
+          <span className="text-xs">
+            {items.find((i) => i.href === pathname)?.label ?? "NeuralFlow"}
+          </span>
+          <span className="ml-auto badge">Local environment</span>
+        </header>
+        <main
+          id="content"
+          className="mx-auto max-w-[1600px] px-5 py-7 sm:px-8 sm:py-9"
+        >
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

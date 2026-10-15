@@ -1,48 +1,13 @@
 import { NextResponse } from "next/server";
-import { addEvent, getStore } from "@/lib/store";
-import { prisma } from "@/lib/prisma";
+import { apiErrorResponse } from "@/lib/api-errors";
+import { finishDeployment } from "@/lib/deployments";
 
-export const dynamic = "force-dynamic";
+type Context = { params: Promise<{ id: string }> };
 
-type Params = {
-  params: Promise<{ id: string }>;
-};
-
-export async function POST(_request: Request, { params }: Params) {
-  const { id } = await params;
-  const store = getStore();
-  const deployment = store.deployments.find((item) => item.id === id);
-
-  if (!deployment) {
-    return NextResponse.json({ error: "deployment not found" }, { status: 404 });
+export async function POST(_request: Request, { params }: Context) {
+  try {
+    return NextResponse.json({ deployment: await finishDeployment((await params).id, "rollback") });
+  } catch (error) {
+    return apiErrorResponse(error);
   }
-
-  deployment.status = "rolled_back";
-  deployment.trafficPercent = 0;
-  deployment.updatedAt = new Date().toISOString();
-
-  await prisma.mLModel.update({
-    where: { id: deployment.modelId },
-    data: {
-      status: "live",
-      version: deployment.fromVersion,
-      trafficPercent: 100,
-    },
-  });
-
-  const model = store.models.find((item) => item.id === deployment.modelId);
-  if (model) {
-    model.status = "live";
-    model.version = deployment.fromVersion;
-    model.trafficPercent = 100;
-    model.lastDeployedAt = deployment.updatedAt;
-  }
-
-  addEvent({
-    title: "Deployment rolled back",
-    description: `${deployment.modelName} returned to ${deployment.fromVersion}.`,
-    type: "rollback",
-  });
-
-  return NextResponse.json({ deployment });
 }

@@ -1,40 +1,15 @@
 import { NextResponse } from "next/server";
-import { getStore } from "@/lib/store";
-import { prisma } from "@/lib/prisma";
+import { apiErrorResponse, readJson } from "@/lib/api-errors";
+import { updateDeploymentTraffic } from "@/lib/deployments";
+import { trafficUpdateSchema } from "@/lib/validation";
 
-export const dynamic = "force-dynamic";
+type Context = { params: Promise<{ id: string }> };
 
-type Params = {
-  params: Promise<{ id: string }>;
-};
-
-export async function PATCH(request: Request, { params }: Params) {
-  const { id } = await params;
-  const body = (await request.json()) as { trafficPercent?: number };
-  const trafficPercent = Math.max(0, Math.min(Number(body.trafficPercent ?? 0), 100));
-
-  const store = getStore();
-  const deployment = store.deployments.find((item) => item.id === id);
-
-  if (!deployment) {
-    return NextResponse.json({ error: "deployment not found" }, { status: 404 });
+export async function PATCH(request: Request, { params }: Context) {
+  try {
+    const { trafficPercent } = trafficUpdateSchema.parse(await readJson(request));
+    return NextResponse.json({ deployment: await updateDeploymentTraffic((await params).id, trafficPercent) });
+  } catch (error) {
+    return apiErrorResponse(error);
   }
-
-  deployment.trafficPercent = deployment.strategy === "shadow" ? 0 : trafficPercent;
-  deployment.updatedAt = new Date().toISOString();
-
-  await prisma.mLModel.update({
-    where: { id: deployment.modelId },
-    data: {
-      trafficPercent: deployment.trafficPercent,
-    },
-  });
-
-  const model = store.models.find((item) => item.id === deployment.modelId);
-  if (model) {
-    model.trafficPercent = deployment.trafficPercent;
-    model.lastDeployedAt = deployment.updatedAt;
-  }
-
-  return NextResponse.json({ deployment });
 }

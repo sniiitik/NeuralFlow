@@ -10,8 +10,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed: ${response.status}`);
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.error === "string" ? body.error : `Request failed (${response.status}). Please try again.`);
   }
 
   return response.json() as Promise<T>;
@@ -25,8 +25,8 @@ async function requestForm<T>(path: string, body: FormData): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed: ${response.status}`);
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.error === "string" ? body.error : `Request failed (${response.status}). Please try again.`);
   }
 
   return response.json() as Promise<T>;
@@ -47,6 +47,7 @@ export const apiClient = {
     toVersion: string;
     strategy: string;
     trafficPercent: number;
+    idempotencyKey?: string;
   }) =>
     request<{ deployment: Deployment }>("/api/deployments", {
       method: "POST",
@@ -65,6 +66,8 @@ export const apiClient = {
     request<{ deployment: Deployment }>(`/api/deployments/${id}/rollback`, {
       method: "POST",
     }),
+  retryDeployment: (id: string) =>
+    request<{ deployment: Deployment }>(`/api/deployments/${id}/retry`, { method: "POST" }),
   getSnapshot: () => request<MetricSnapshot>("/api/metrics/snapshot"),
   getTimeSeries: () => request<{ series: TimeSeriesPoint[] }>("/api/metrics/timeseries"),
 };

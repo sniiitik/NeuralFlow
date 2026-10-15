@@ -6,17 +6,25 @@ export const runtime = "nodejs";
 export async function GET() {
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = () => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(generateSnapshot())}\n\n`));
+      const send = async () => {
+        try {
+          const snapshot = await generateSnapshot();
+          if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(snapshot)}\n\n`));
+        } catch (error) {
+          console.error("Metrics stream error", error);
+          if (!closed) controller.enqueue(encoder.encode(`event: error\ndata: {"error":"Metrics unavailable"}\n\n`));
+        }
       };
 
-      send();
-      timer = setInterval(send, 2000);
+      void send();
+      timer = setInterval(() => { void send(); }, 2000);
     },
     cancel() {
+      closed = true;
       if (timer) clearInterval(timer);
     },
   });

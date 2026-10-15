@@ -21,6 +21,15 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.log
+*.tmp
+*.bak
+*.sqlite
+*.db
+.venv/
+.mypy_cache/
+.ruff_cache/
 
 # debug
 npm-debug.log*
@@ -40,3 +49,15 @@ pnpm-debug.log*
 next-env.d.ts
 
 /generated/prisma
+/var/artifacts/
+/var/trained/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local demo state and verification output
+/var/demo/
+/test-results/
+/playwright-report/
+*.dump
+*.sql.gz

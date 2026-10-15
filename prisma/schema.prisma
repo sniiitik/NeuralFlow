@@ -28,7 +28,35 @@ enum DeploymentStatus {
   failed
 }
 
-model MLModel {
+enum DeploymentLifecycleState {
+  pending
+  preparing
+  starting
+  healthy
+  active
+  failed
+  terminated
+}
+
+enum RuntimeSlot {
+  blue
+  green
+}
+
+enum InferenceRequestRole {
+  stable
+  candidate
+  shadow
+}
+
+enum InferenceRequestStatus {
+  success
+  failed
+  skipped
+}
+
+// Preserved for migration compatibility. New requests use ModelFamily/ModelVersion.
+model LegacyMLModel {
   id             String        @id @default(cuid())
   name           String
   version        String
@@ -49,16 +77,18 @@ model MLModel {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  deployments    Deployment[]
+  deployments    LegacyDeployment[]
 
   @@unique([name, version])
+  @@map("MLModel")
 }
 
-model Deployment {
+// Preserved for migration compatibility. New requests use RegistryDeployment.
+model LegacyDeployment {
   id             String               @id @default(cuid())
 
   modelId        String
-  model          MLModel              @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  model          LegacyMLModel        @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
   fromVersion    String?
   toVersion      String
@@ -70,4 +100,273 @@ model Deployment {
 
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
+
+  @@map("Deployment")
+}
+
+enum ArtifactFormat {
+  json
+  safetensors
+}
+
+model ModelFamily {
+  id          String               @id @default(cuid())
+  name        String               @unique
+  owner       String
+  description String               @default("")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  versions    ModelVersion[]
+  deployments RegistryDeployment[]
+  servingRoute ServingRoute?
+  inferenceRequests InferenceRequest[]
+}
+
+model ModelVersion {
+  id                     String               @id @default(cuid())
+  familyId               String
+  family                 ModelFamily          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  version                String
+  framework              String
+  description            String               @default("")
+  runtime                String               @default("cpu-small")
+  replicas               Int                  @default(1)
+  legacyArtifactName     String?
+  legacyArtifactSizeKb   Int?
+  createdAt              DateTime             @default(now())
+  state                  ModelRuntimeState?
+  artifact               ModelArtifact?
+  targetDeployments      RegistryDeployment[] @relation("TargetVersion")
+  stableDeployments      RegistryDeployment[] @relation("StableVersion")
+  activeRoutes           ServingRoute[]       @relation("ActiveRouteVersion")
+  candidateRoutes        ServingRoute[]       @relation("CandidateRouteVersion")
+  inferenceRequests      InferenceRequest[]
+  featureReference       FeatureReference?
+
+  @@unique([familyId, version])
+  @@index([familyId])
+}
+
+model ModelRuntimeState {
+  versionId         String       @id
+  version           ModelVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  status            ModelStatus  @default(shadow)
+  trafficPercent    Int          @default(0)
+  requestsPerSecond Int          @default(0)
+  latencyMs         Int          @default(0)
+  errorRate         Float        @default(0)
+  driftScore        Float        @default(0)
+  lastDeployedAt    DateTime?
+  updatedAt         DateTime     @updatedAt
+}
+
+model ModelArtifact {
+  id           String         @id @default(cuid())
+  versionId    String         @unique
+  version      ModelVersion   @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  originalName String
+  format       ArtifactFormat
+  mediaType    String
+  byteSize     Int
+  sha256       String
+  storageKey   String
+  createdAt    DateTime       @default(now())
+
+  @@index([sha256])
+}
+
+model RegistryDeployment {
+  id                String             @id @default(cuid())
+  familyId          String
+  family            ModelFamily        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  stableVersionId   String?
+  stableVersion     ModelVersion?      @relation("StableVersion", fields: [stableVersionId], references: [id], onDelete: Restrict)
+  targetVersionId   String
+  targetVersion     ModelVersion       @relation("TargetVersion", fields: [targetVersionId], references: [id], onDelete: Restrict)
+  strategy          DeploymentStrategy
+  status            DeploymentStatus   @default(pending)
+  trafficPercent    Int                @default(0)
+  stableLatencyMs   Int                @default(0)
+  canaryLatencyMs   Int                @default(0)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  events            DeploymentEvent[]
+  lifecycleState    DeploymentLifecycleState?
+  idempotencyKey    String?            @unique
+  requestHash       String?
+  lastError         String?
+  servingRoutes     ServingRoute[]
+  stableSlot        RuntimeSlot?
+  candidateSlot     RuntimeSlot?
+  promotedRouteRevision Int?
+  inferenceRequests InferenceRequest[]
+
+  @@index([familyId, createdAt])
+  @@index([targetVersionId])
+}
+
+model ServingRoute {
+  familyId              String             @id
+  family                ModelFamily        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  activeVersionId       String
+  activeVersion         ModelVersion       @relation("ActiveRouteVersion", fields: [activeVersionId], references: [id], onDelete: Restrict)
+  candidateVersionId    String?
+  candidateVersion      ModelVersion?      @relation("CandidateRouteVersion", fields: [candidateVersionId], references: [id], onDelete: Restrict)
+  candidateDeploymentId String?
+  candidateDeployment   RegistryDeployment? @relation(fields: [candidateDeploymentId], references: [id], onDelete: Restrict)
+  trafficPercent        Int                @default(0)
+  revision              Int                @default(0)
+  updatedAt             DateTime           @updatedAt
+  activeSlot            RuntimeSlot        @default(blue)
+  candidateSlot         RuntimeSlot?
+}
+
+model InferenceRequest {
+  id           String                 @id @default(cuid())
+  requestId    String
+  familyId     String
+  family       ModelFamily            @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  deploymentId String?
+  deployment   RegistryDeployment?    @relation(fields: [deploymentId], references: [id], onDelete: Restrict)
+  versionId    String
+  version      ModelVersion           @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  slot         RuntimeSlot
+  role         InferenceRequestRole
+  status       InferenceRequestStatus
+  inferenceMs  Float?
+  gatewayMs    Float?
+  features     Json?
+  source       String                 @default("user")
+  prediction   String?
+  probabilities Json?
+  errorCode    String?
+  createdAt    DateTime               @default(now())
+
+  @@index([deploymentId, role, status])
+  @@index([familyId, createdAt])
+  @@index([requestId])
+  @@index([createdAt, status])
+}
+
+model FeatureReference {
+  versionId   String       @id
+  version     ModelVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  mean        Json
+  scale       Json
+  sampleCount Int
+  source      String
+  createdAt   DateTime     @default(now())
+}
+
+model RuntimeHealthSample {
+  id         String      @id @default(cuid())
+  slot       RuntimeSlot
+  healthy    Boolean
+  latencyMs  Float?
+  errorCode  String?
+  bucketAt   DateTime
+  createdAt  DateTime    @default(now())
+
+  @@unique([slot, bucketAt])
+  @@index([createdAt])
+}
+
+model AlertEvent {
+  id          String   @id @default(cuid())
+  fingerprint String   @unique
+  kind        String
+  severity    String
+  message     String
+  observed    Float
+  threshold   Float
+  windowStart DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model DeploymentEvent {
+  id           String             @id @default(cuid())
+  deploymentId String
+  deployment   RegistryDeployment @relation(fields: [deploymentId], references: [id], onDelete: Restrict)
+  action       String
+  details      Json
+  createdAt    DateTime           @default(now())
+
+  @@index([deploymentId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String   @default("system")
+  action     String
+  entityType String
+  entityId   String
+  details    Json
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+}
+
+// Better Auth identities and sessions. Access is denied when no account exists.
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          String    @default("viewer")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }

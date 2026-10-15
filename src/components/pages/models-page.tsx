@@ -1,144 +1,302 @@
 "use client";
-
-import { Filter, Plus, Search, Boxes } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Plus, Boxes } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NewModelModal } from "@/components/models/new-model-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineNotice } from "@/components/ui/inline-notice";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Dialog } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api-client";
-import { formatRelativeTime } from "@/lib/format";
-import type { MLModel, ModelStatus } from "@/lib/types";
-
-const statusFilters: Array<ModelStatus | "all"> = ["all", "live", "canary", "rolling", "shadow"];
-
+import { useAccess } from "@/hooks/use-access";
+import type { MLModel } from "@/lib/types";
 export function ModelsPage() {
-  const [models, setModels] = useState<MLModel[]>([]);
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<ModelStatus | "all">("all");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [page, setPage] = useState(0);
+  const [models, setModels] = useState<MLModel[]>([]),
+    [query, setQuery] = useState(""),
+    [framework, setFramework] = useState("all"),
+    [sort, setSort] = useState("newest"),
+    [open, setOpen] = useState(false),
+    [detail, setDetail] = useState<string | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const { canWrite } = useAccess();
   useEffect(() => {
     apiClient
       .getModels()
-      .then((response) => {
-        setModels(response.models);
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Unable to load models.");
-      })
+      .then((r) => setModels(r.models))
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
-  const filtered = useMemo(() => {
-    return models.filter((model) => {
-      const matchesQuery = [model.name, model.version, model.framework, model.owner]
-        .join(" ")
-        .toLowerCase()
-        .includes(query.toLowerCase());
-      const matchesStatus = status === "all" || model.status === status;
-      return matchesQuery && matchesStatus;
-    });
-  }, [models, query, status]);
-
+  const families = Object.values(
+    models.reduce<Record<string, MLModel[]>>((a, m) => {
+      (a[m.familyId ?? m.name] ??= []).push(m);
+      return a;
+    }, {}),
+  )
+    .map((v) => v.sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+    .filter(
+      (v) =>
+        v.some((m) =>
+          `${m.name} ${m.version} ${m.owner}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+        ) &&
+        (framework === "all" || v[0].framework === framework),
+    )
+    .sort((a, b) =>
+      sort === "name"
+        ? a[0].name.localeCompare(b[0].name)
+        : b[0].createdAt.localeCompare(a[0].createdAt),
+    );
+  const versions = models
+    .filter((m) => (m.familyId ?? m.name) === detail)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async function activate(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/inference/deployments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId: id }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error ?? "Activation failed");
+      setMessage(
+        "Version loaded and ready for direct inference. Open the Inference Playground to test it.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Activation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow="Registry"
-        title="Models"
-        description="Track versions, ownership, runtimes, traffic, and model health in one registry."
+        title="Model Registry"
+        description="Versioned models and verified artifacts. A durable foundation for every deployment."
         action={
-          <button onClick={() => setModalOpen(true)} className="flex items-center gap-2 rounded-2xl bg-[#6457f6] px-5 py-3 font-bold text-white shadow-lg shadow-[#6457f6]/20 transition hover:bg-[#756bff]">
-            <Plus className="h-5 w-5" /> New model
+          <button
+            className="btn btn-primary"
+            disabled={!canWrite}
+            title={
+              !canWrite
+                ? "Operator or administrator access required"
+                : undefined
+            }
+            onClick={() => setOpen(true)}
+          >
+            <Plus size={16} />
+            Register version
           </button>
         }
       />
-
-      <section className="glass-card rounded-[24px] p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#8f8b81]" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search models, versions, owners..."
-              className="w-full rounded-2xl border border-white/10 bg-[#1f201d] py-3 pl-12 pr-4 text-[#f5f3ed] outline-none transition placeholder:text-[#77736a] focus:border-[#6457f6]"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter className="h-5 w-5 text-[#8f8b81]" />
-            {statusFilters.map((item) => (
-              <button
-                key={item}
-                onClick={() => setStatus(item)}
-                className={`rounded-full px-4 py-2 text-sm font-bold capitalize transition ${status === item ? "bg-[#e8e7ff] text-[#4d4592]" : "bg-white/[0.04] text-[#c9c4b9] hover:bg-white/[0.08]"}`}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {error ? <InlineNotice title="Models unavailable" message={error} tone="error" /> : null}
-
-      {loading && models.length === 0 ? (
-        <InlineNotice title="Loading models" message="Fetching the registry from your local Prisma-backed API." />
-      ) : filtered.length === 0 ? (
+      {!canWrite && (
+        <p className="text-xs muted">
+          Read-only registry access · registration requires an operator or
+          administrator.
+        </p>
+      )}
+      {error && (
+        <InlineNotice
+          title="Registry request failed"
+          message={error}
+          tone="error"
+        />
+      )}
+      {message && <InlineNotice title="Version ready" message={message} />}
+      <div className="flex flex-wrap gap-3">
+        <input
+          aria-label="Search model families"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(0);
+          }}
+          placeholder="Search models, versions, owners…"
+          className="w-full min-w-0 basis-full sm:flex-1 sm:basis-auto"
+        />
+        <select
+          aria-label="Filter framework"
+          value={framework}
+          onChange={(e) => {
+            setFramework(e.target.value);
+            setPage(0);
+          }}
+        >
+          <option value="all">All frameworks</option>
+          {Array.from(new Set(models.map((m) => m.framework))).map((f) => (
+            <option key={f}>{f}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Sort models"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+        >
+          <option value="newest">Newest first</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
+      {loading ? (
+        <InlineNotice
+          title="Loading registry"
+          message="Retrieving registered model families and versions."
+        />
+      ) : !families.length ? (
         <EmptyState
           icon={Boxes}
-          title={models.length === 0 ? "No models yet" : "No models match this filter"}
-          description={
-            models.length === 0
-              ? "Create the first model in the registry to start tracking versions, traffic, and deployment health."
-              : "Try a different search query or status filter to widen the results."
-          }
+          title="No matching models"
+          description="Register your first version or adjust your search."
         />
       ) : (
-        <section className="glass-card overflow-hidden rounded-[24px]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left">
-              <thead className="border-b border-white/10 bg-white/[0.025] text-sm uppercase tracking-[0.18em] text-[#8f8b81]">
-                <tr>
-                  <th className="px-6 py-4">Model</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Traffic</th>
-                  <th className="px-6 py-4">Latency</th>
-                  <th className="px-6 py-4">Error</th>
-                  <th className="px-6 py-4">Drift</th>
-                  <th className="px-6 py-4">Updated</th>
+        <div className="panel overflow-x-auto" tabIndex={0} role="region" aria-label="Model families table; scroll horizontally on narrow screens">
+          <table className="min-w-[800px]">
+            <thead>
+              <tr>
+                <th>Model family</th>
+                <th>Framework</th>
+                <th>Versions</th>
+                <th>Latest registered</th>
+                <th>Owner</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody>
+              {families.slice(page * 15, page * 15 + 15).map((v) => (
+                <tr key={v[0].familyId ?? v[0].name}>
+                  <td>
+                    <button
+                      className="text-left font-medium hover:underline"
+                      onClick={() => setDetail(v[0].familyId ?? v[0].name)}
+                    >
+                      {v[0].name}
+                    </button>
+                    <p className="text-xs muted max-w-xs truncate">
+                      {v[0].description || "No description"}
+                    </p>
+                  </td>
+                  <td className="muted">{v[0].framework}</td>
+                  <td>{v.length}</td>
+                  <td className="mono">{v[0].version}</td>
+                  <td className="muted">{v[0].owner || "—"}</td>
+                  <td className="text-xs muted whitespace-nowrap">
+                    {new Date(v[0].createdAt).toLocaleDateString()}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {filtered.map((model) => (
-                  <tr key={model.id} className="transition hover:bg-white/[0.025]">
-                    <td className="px-6 py-5">
-                      <div className="font-bold tracking-[-0.04em] text-[#f5f3ed]">{model.name}</div>
-                      <div className="mt-1 text-sm font-semibold text-[#a9a49a]">{model.version} - {model.framework} - {model.owner}</div>
-                      {model.artifactName ? <div className="mt-1 text-xs font-semibold text-[#807b72]">artifact: {model.artifactName} ({model.artifactSizeKb} KB)</div> : null}
-                    </td>
-                    <td className="px-6 py-5"><StatusBadge status={model.status} /></td>
-                    <td className="px-6 py-5 font-bold text-[#f5f3ed]">{model.trafficPercent}%</td>
-                    <td className="px-6 py-5 font-bold text-[#f5f3ed]">{model.avgLatencyMs}ms</td>
-                    <td className="px-6 py-5 font-bold text-[#f5f3ed]">{model.errorRate}%</td>
-                    <td className="px-6 py-5 font-bold text-[#f5f3ed]">{model.driftScore}</td>
-                    <td className="px-6 py-5 text-[#bcb8ad]">{formatRelativeTime(model.lastDeployedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-
+      <div className="flex justify-between items-center text-xs muted">
+        <span>{families.length} model families</span>
+        <div className="flex gap-2">
+          <button
+            className="btn"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Previous
+          </button>
+          <button
+            className="btn"
+            disabled={(page + 1) * 15 >= families.length}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+      <Dialog
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        title={versions[0]?.name ?? "Model details"}
+      >
+        <p className="text-sm muted mb-5">
+          {versions[0]?.description} Version metadata is immutable. Register a
+          new version to change the model.
+        </p>
+        {versions.map((m) => (
+          <section
+            key={m.id}
+            className="border-t border-[var(--border)] py-5 space-y-3"
+          >
+            <div className="flex justify-between">
+              <strong className="mono">{m.version}</strong>
+              <StatusBadge status={m.status} />
+            </div>
+            <dl className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt className="muted">Registered</dt>
+                <dd>{new Date(m.createdAt).toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt className="muted">Runtime compatibility</dt>
+                <dd>
+                  {m.framework === "sklearn"
+                    ? "Iris JSON required"
+                    : "Registry storage only"}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-xs muted">
+              {m.artifactAvailable ? "Artifact stored" : "No stored artifact"} ·{" "}
+              {m.artifactName ?? "—"}{" "}
+              {m.artifactSizeKb ? `· ${m.artifactSizeKb} KB` : ""}
+            </p>
+            {m.artifactSha256 && (
+              <div>
+                <p className="label">
+                  SHA-256 · verified on upload and retrieval
+                </p>
+                <p className="mono muted">{m.artifactSha256}</p>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {m.artifactAvailable && (
+                <a className="btn" href={`/api/models/${m.id}/artifact`}>
+                  Download artifact
+                </a>
+              )}
+              {canWrite && m.artifactAvailable && m.framework === "sklearn" && (
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => activate(m.id)}
+                >
+                  {busy ? "Preparing…" : "Activate for inference"}
+                </button>
+              )}
+            </div>
+          </section>
+        ))}
+        {message && (
+          <p role="status" className="text-sm text-[var(--success)]">
+            {message}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-[var(--danger)]">
+            {error}
+          </p>
+        )}
+        <a className="btn mt-4" href="/deployments">
+          View deployments
+        </a>
+      </Dialog>
       <NewModelModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={(model) => setModels((current) => [model, ...current])}
+        familyNames={Array.from(new Set(models.map(m=>m.name)))}
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={(m) => {
+          setModels((v) => [m, ...v]);
+          setMessage(`${m.name} ${m.version} registered successfully.`);
+        }}
       />
     </div>
   );

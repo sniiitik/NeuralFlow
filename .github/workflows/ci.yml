@@ -1,0 +1,53 @@
+name: NeuralFlow CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://neuralflow:neuralflow@127.0.0.1:5432/neuralflow_ci_test
+      TEST_DATABASE_URL: postgresql://neuralflow:neuralflow@127.0.0.1:5432/neuralflow_ci_test
+      ARTIFACT_STORAGE_DIR: ${{ github.workspace }}/var/artifacts
+      INFERENCE_RUNTIME_URL: http://127.0.0.1:8001
+      INFERENCE_RUNTIME_GREEN_URL: http://127.0.0.1:8002
+      INFERENCE_RUNTIME_TOKEN: ci-runtime-token-only-for-isolated-tests-2026
+      BETTER_AUTH_SECRET: ci-auth-secret-only-for-isolated-tests-2026
+      BETTER_AUTH_URL: http://127.0.0.1:3100
+      SECURITY_TEST_BASE_URL: http://127.0.0.1:3100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npm run db:generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: Start isolated PostgreSQL and runtimes
+        run: docker compose --profile inference up -d --build postgres inference inference-green
+      - name: Initialize a fresh test database
+        run: |
+          docker compose exec -T postgres createdb -U neuralflow neuralflow_ci_test
+          npm run db
+          npx prisma migrate status
+      - run: npm test
+      - run: npm run test:inference
+      - name: Start built gateway for HTTP security tests
+        run: |
+          PORT=3100 HOSTNAME=127.0.0.1 node .next/standalone/server.js > /tmp/neuralflow-ci-server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3100/login >/dev/null && exit 0; sleep 1; done
+          cat /tmp/neuralflow-ci-server.log
+          exit 1
+      - run: npm run test:security
+      - name: Runtime Python tests
+        run: |
+          docker build --target test -t neuralflow-inference-test ./inference
+          docker run --rm neuralflow-inference-test
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile inference logs --tail=100

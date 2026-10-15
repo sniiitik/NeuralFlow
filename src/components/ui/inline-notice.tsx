@@ -1,8 +1,8 @@
 type NoticeTone = "error" | "info";
 
 const toneStyles: Record<NoticeTone, string> = {
-  error: "border-[#6b2f35] bg-[#341b1f] text-[#ffd9dd]",
-  info: "border-white/10 bg-white/[0.03] text-[#d7d2c8]",
+  error: "border-[var(--danger)]/30 bg-[var(--surface)] text-[var(--danger)]",
+  info: "border-white/10 bg-white/[0.03] text-[var(--secondary)]",
 };
 
 export function InlineNotice({
@@ -15,8 +15,11 @@ export function InlineNotice({
   tone?: NoticeTone;
 }) {
   return (
-    <div className={`rounded-2xl border px-4 py-3 ${toneStyles[tone]}`}>
-      <p className="text-sm font-bold tracking-[-0.02em]">{title}</p>
+    <div
+      role={tone === "error" ? "alert" : "status"}
+      className={`rounded-lg border px-4 py-3 ${toneStyles[tone]}`}
+    >
+      <p className="text-sm font-medium tracking-[-0.02em]">{title}</p>
       <p className="mt-1 text-sm">{message}</p>
     </div>
   );
