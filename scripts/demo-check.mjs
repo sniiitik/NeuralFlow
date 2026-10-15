@@ -10,7 +10,7 @@ await check('PostgreSQL and migration history',async()=>{
   const {rows}=await db.query('SELECT migration_name, checksum, finished_at, rolled_back_at FROM _prisma_migrations');
   for(const entry of await readdir('prisma/migrations',{withFileTypes:true}))if(entry.isDirectory()){
    const checksum=createHash('sha256').update(await readFile(`prisma/migrations/${entry.name}/migration.sql`)).digest('hex');
-   if(!rows.some(r=>r.migration_name===entry.name&&r.finished_at&&!r.rolled_back_at&&r.checksum===checksum))throw new Error(`Migration ${entry.name} is missing or differs. Follow docs/migrations.md.`);
+   if(!rows.some(r=>r.migration_name===entry.name&&r.finished_at&&!r.rolled_back_at&&r.checksum===checksum))throw new Error(`Migration ${entry.name} is missing or differs. See the README migration guidance.`);
   }
  }finally{await db.end();}
 });

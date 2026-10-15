@@ -44,7 +44,7 @@ flowchart TB
   Metrics --> Browser
 ```
 
-Blue and green are independent slots. The serving route determines which is stable or candidate; requests do not pass through one runtime to reach the other. See [architecture](docs/architecture.md).
+Blue and green are independent slots. The serving route determines which is stable or candidate; requests do not pass through one runtime to reach the other.
 
 ## Technology stack
 
@@ -87,7 +87,7 @@ npm run demo:check
 
 Open **http://localhost:3000**. Read `NEURALFLOW_ADMIN_EMAIL` and `NEURALFLOW_ADMIN_PASSWORD` privately from `.env`. `env:init` creates random local credentials and preserves existing configured values; it prints no secrets.
 
-`db:init` is only for an empty database. For an existing installation, use `npx prisma migrate status` and `npm run db:deploy` when an upgrade is needed. Historical ordering prevents ordinary `prisma migrate dev` shadow replay; [the migration guide](docs/migrations.md) explains the compatible process. Never reset a database to follow this quick start.
+`db:init` is only for an empty database. It applies the historical migrations in dependency order and records them with Prisma. Their directory names sort out of dependency order, so ordinary `prisma migrate dev` shadow replay is unsupported. For an existing installation, inspect `npx prisma migrate status` and use `npm run db:deploy` for pending reviewed migrations. Author new additive migrations in a later directory and verify them on a disposable database first. Never rename an applied migration, use `db push` to bypass tracking, or reset a database to follow this quick start. Back up PostgreSQL and `ARTIFACT_STORAGE_DIR` together before upgrades.
 
 To start an already configured installation:
 
@@ -107,7 +107,7 @@ npm run demo:traffic -- --count=100
 
 Setup registers/verifies only the reserved demo family and artifacts, activates v1 if no route exists, and preserves an existing route. It does not silently undo a rollout. The traffic command authenticates with your configured administrator account and sends one real request per second as ordinary user traffic; it never inserts metrics directly. Local state under `var/demo` contains identifiers, not credentials, and is ignored by Git.
 
-For a useful canary distribution, configure v1 → v2 at 10% candidate traffic in Deployments, then run `npm run demo:traffic -- --count=300` **before recording**. A few requests need not match 90/10 exactly. Follow [the timed demo script](docs/DEMO_SCRIPT.md) for a 4–5 minute walkthrough.
+For a useful canary distribution, configure v1 → v2 at 10% candidate traffic in Deployments, then run `npm run demo:traffic -- --count=300` **before recording**. A few requests need not match 90/10 exactly.
 
 ## Testing
 
@@ -121,7 +121,7 @@ docker compose config --quiet
 docker compose build app
 ```
 
-Integration tests require a separate migrated database named with an `_test` suffix and both real runtimes. Export its URL as `TEST_DATABASE_URL`; never use your primary database. See [testing and release verification](docs/release-verification.md) for exact commands, fresh initialization, authenticated gateway tests, restart verification, Python tests, and browser checks.
+Integration tests require a separate database named with an `_test` suffix and both real runtimes. Set `TEST_DATABASE_URL` to that database, run `npm run db:init` with `DATABASE_URL` pointing to it, then run the relevant test commands. Never use your primary database for integration tests.
 
 | Command | Coverage |
 |---|---|
@@ -135,7 +135,7 @@ GitHub Actions configuration is included. Local verification does not mean the w
 
 ## Security
 
-**NeuralFlow is a local technical demonstration and is not intended for public production deployment.** Host ports bind to loopback; runtimes require an internal credential. Public signup is disabled, and write operations require an authorized session and matching origin. Keep `.env`, artifact volumes, dumps, and browser session files out of Git. See [security controls, advisories, backup and recovery](docs/security.md).
+**NeuralFlow is a local technical demonstration and is not intended for public production deployment.** Host ports bind to loopback; runtimes require an internal credential. Public signup is disabled, and write operations require an authorized session and matching origin. Keep `.env`, artifact volumes, dumps, and browser session files out of Git. Back up PostgreSQL and artifacts together. Run `npm audit` before dependency upgrades; nine high advisories remained at the last local review.
 
 ## Known limitations
 
@@ -146,11 +146,11 @@ GitHub Actions configuration is included. Local verification does not mean the w
 - Drift detects standardized mean changes, not all distribution changes or model accuracy.
 - Telemetry has age-based retention; audit history and artifacts require an operator retention policy.
 - Historical migration ordering still blocks `migrate dev`; fresh initialization uses `db:init`.
-- Remaining npm advisories are documented, not suppressed. Browser verification covers Chromium; Safari/Firefox and a full accessibility audit remain unverified.
+- Remaining npm advisories are not suppressed. Browser verification covers Chromium; Safari/Firefox and a full accessibility audit remain unverified.
 - The PostgreSQL driver can emit a concurrent-query deprecation warning during integration traffic.
 
 ## Roadmap
 
 Potential future work is limited to hardening: canonical migration history, distributed rate limits and reconciliation, reviewed production networking/secrets, broader browser accessibility coverage, and storage lifecycle policies. These are not current capabilities.
 
-[API reference](docs/api.md) · [Architecture](docs/architecture.md) · [Demo script](docs/DEMO_SCRIPT.md) · [Portfolio material](docs/portfolio.md) · [UI system](docs/ui-design.md)
+[Final demo screenshots](docs/screenshots/final-demo/)
