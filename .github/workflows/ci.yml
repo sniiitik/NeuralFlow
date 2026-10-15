@@ -32,6 +32,7 @@ jobs:
         run: docker compose --profile inference up -d --build postgres inference inference-green
       - name: Initialize a fresh test database
         run: |
+          timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -h 127.0.0.1 -U neuralflow -d neuralflow >/dev/null 2>&1; do sleep 1; done'
           docker compose exec -T postgres createdb -U neuralflow neuralflow_ci_test
           npm run db
           npx prisma migrate status
